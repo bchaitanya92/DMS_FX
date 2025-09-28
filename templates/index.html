@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DisasterShield - Weather Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        #map { height: 500px; }
+        .risk-high { background-color: #ffcdd2; }
+        .risk-medium { background-color: #fff9c4; }
+        .risk-low { background-color: #c8e6c9; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">DisasterShield</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/alerts">Alerts</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/resources">Resources</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h1 class="mb-4">Weather Dashboard</h1>
+        
+        <div class="row">
+            <div class="col-md-8">
+                <div id="map" class="mb-4"></div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Location Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="locationDetails">
+                            Select a location on the map to view details
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            {% for location, data in locations.items() %}
+            <div class="col-md-4 mb-4">
+                <div class="card {% if data.risk_level == 'high' %}risk-high{% elif data.risk_level == 'medium' %}risk-medium{% else %}risk-low{% endif %}">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">{{ location }}</h5>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Temperature:</strong> {{ data.weather.temperature }}°C</p>
+                        <p><strong>Wind Speed:</strong> {{ data.weather.wind_speed }} km/h</p>
+                        <p><strong>Rainfall:</strong> {{ data.weather.rainfall }} mm</p>
+                        <p><strong>Risk Level:</strong> {{ data.risk_level.title() }}</p>
+                        {% if data.disaster_types %}
+                        <p><strong>Potential Disasters:</strong></p>
+                        <ul>
+                            {% for disaster in data.disaster_types %}
+                            <li>{{ disaster.title() }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        // Initialize map
+        var map = L.map('map').setView([20.5937, 78.9629], 5);  // Center on India
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Add markers for each location
+        {% for location, data in locations.items() %}
+        L.marker([{{ data.lat }}, {{ data.lon }}])
+            .bindPopup(`
+                <strong>{{ location }}</strong><br>
+                Temperature: {{ data.weather.temperature }}°C<br>
+                Wind Speed: {{ data.weather.wind_speed }} km/h<br>
+                Rainfall: {{ data.weather.rainfall }} mm<br>
+                Risk Level: {{ data.risk_level.title() }}
+            `)
+            .addTo(map);
+        {% endfor %}
+    </script>
+</body>
+</html> 

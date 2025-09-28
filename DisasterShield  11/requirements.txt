@@ -1,0 +1,11 @@
+flask==2.2.3
+werkzeug==2.2.3
+pandas==1.5.3
+numpy==1.24.3
+scikit-learn==1.2.2
+twilio==8.10.0
+python-dotenv==1.0.0
+requests==2.31.0
+joblib>=1.1.0
+plotly>=5.3.1
+streamlit>=1.0.0 

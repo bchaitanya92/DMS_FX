@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block head %}
+<style>
+    .globe-container {
+        position: relative;
+        width: 100%;
+        height: 80vh;
+        background: #1a1a1a;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    #globe {
+        width: 100%;
+        height: 100%;
+    }
+    .location-info {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        max-width: 300px;
+        display: none;
+        z-index: 1000;
+    }
+    .location-info.active {
+        display: block;
+    }
+    .risk-level {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-size: 0.9em;
+        margin-top: 10px;
+    }
+    .risk-high { background: #ff4444; color: white; }
+    .risk-medium { background: #ffbb33; color: white; }
+    .risk-low { background: #00C851; color: white; }
+    .disaster-type {
+        display: inline-block;
+        margin: 5px;
+        padding: 5px 10px;
+        background: #f8f9fa;
+        border-radius: 15px;
+        font-size: 0.8em;
+    }
+    .loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-size: 1.2em;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2 class="mb-4">Interactive Globe View</h2>
+    <div class="globe-container">
+        <div id="globe"></div>
+        <div id="loading" class="loading">Loading globe...</div>
+        <div id="location-info" class="location-info">
+            <h3>Location Details</h3>
+            <div id="weather-data"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+    // Globe implementation
+    let scene, camera, renderer, globe;
+    const locationData = JSON.parse('{{ locations|tojson|safe }}');
+    const markers = [];
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+    let targetRotation = { x: 0, y: 0 };
+    let currentRotation = { x: 0, y: 0 };
+
+    // Wait for DOM and resources to load
+    window.addEventListener('DOMContentLoaded', () => {
+        console.log('DOM loaded, initializing globe...');
+        console.log('Location data:', locationData);
+        try {
+            init();
+            animate();
+        } catch (error) {
+            console.error('Error initializing globe:', error);
+            document.getElementById('loading').textContent = 'Error loading globe. Please refresh the page.';
+        }
+    });
+
+    function init() {
+        // Scene setup
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+        
+        // Get container dimensions
+        const container = document.getElementById('globe');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        
+        // Camera setup with correct aspect ratio
+        camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+        camera.position.z = 15;
+        
+        // Renderer setup
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(width, height);
+        container.appendChild(renderer.domElement);
+
+        // Create globe with basic material first
+        const geometry = new THREE.SphereGeometry(5, 32, 32);
+        const material = new THREE.MeshPhongMaterial({
+            color: 0x4477aa,
+            shininess: 15
+        });
+        globe = new THREE.Mesh(geometry, material);
+        scene.add(globe);
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 3, 5);
+        scene.add(directionalLight);
+
+        // Load texture
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.load(
+            'https://cdn.jsdelivr.net/npm/three/examples/textures/planets/earth_atmos_2048.jpg',
+            (texture) => {
+                console.log('Texture loaded successfully');
+                globe.material.map = texture;
+                globe.material.needsUpdate = true;
+                // Add location markers after texture is loaded
+                if (locationData && locationData.length) {
+                    addLocationMarkers();
+                }
+                document.getElementById('loading').style.display = 'none';
+            },
+            (progress) => {
+                console.log('Texture loading progress:', (progress.loaded / progress.total * 100) + '%');
+            },
+            (error) => {
+                console.error('Error loading texture:', error);
+                // Add markers even if texture fails
+                if (locationData && locationData.length) {
+                    addLocationMarkers();
+                }
+                document.getElementById('loading').style.display = 'none';
+            }
+        );
+
+        // Event listeners
+        const globeElement = renderer.domElement;
+        globeElement.addEventListener('mousedown', onMouseDown);
+        globeElement.addEventListener('mousemove', onMouseMove);
+        globeElement.addEventListener('mouseup', onMouseUp);
+        globeElement.addEventListener('wheel', onMouseWheel);
+        window.addEventListener('resize', onWindowResize);
+
+        // Initial render
+        renderer.render(scene, camera);
+    }
+
+    function addLocationMarkers() {
+        locationData.forEach(location => {
+            const markerGeometry = new THREE.SphereGeometry(0.1, 16, 16);
+            const markerMaterial = new THREE.MeshBasicMaterial({ 
+                color: getRiskColor(location.risk_level),
+                transparent: true,
+                opacity: 0.8
+            });
+            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+            
+            // Convert lat/lon to 3D coordinates
+            const phi = (90 - location.lat) * (Math.PI / 180);
+            const theta = (location.lon + 180) * (Math.PI / 180);
+            const radius = 5.1;
+            
+            marker.position.x = -(radius * Math.sin(phi) * Math.cos(theta));
+            marker.position.y = radius * Math.cos(phi);
+            marker.position.z = radius * Math.sin(phi) * Math.sin(theta);
+            
+            scene.add(marker);
+            markers.push({ mesh: marker, data: location });
+        });
+    }
+
+    function getRiskColor(risk) {
+        if (risk > 0.7) return 0xff4444;
+        if (risk > 0.4) return 0xffbb33;
+        return 0x00C851;
+    }
+
+    function onMouseDown(event) {
+        isDragging = true;
+        previousMousePosition = {
+            x: event.clientX,
+            y: event.clientY
+        };
+    }
+
+    function onMouseMove(event) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        if (isDragging) {
+            const deltaMove = {
+                x: event.clientX - previousMousePosition.x,
+                y: event.clientY - previousMousePosition.y
+            };
+
+            targetRotation.x += deltaMove.y * 0.005;
+            targetRotation.y += deltaMove.x * 0.005;
+
+            targetRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, targetRotation.x));
+
+            previousMousePosition = {
+                x: event.clientX,
+                y: event.clientY
+            };
+        } else {
+            // Check for marker hover
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+            const intersects = raycaster.intersectObjects(markers.map(m => m.mesh));
+            
+            if (intersects.length > 0) {
+                const marker = markers.find(m => m.mesh === intersects[0].object);
+                showLocationInfo(marker.data);
+            } else {
+                hideLocationInfo();
+            }
+        }
+    }
+
+    function onMouseUp() {
+        isDragging = false;
+    }
+
+    function onMouseWheel(event) {
+        const zoomSpeed = 0.001;
+        camera.position.z += event.deltaY * zoomSpeed;
+        camera.position.z = Math.max(8, Math.min(20, camera.position.z));
+    }
+
+    function showLocationInfo(location) {
+        const info = document.getElementById('location-info');
+        const weatherData = document.getElementById('weather-data');
+        
+        weatherData.innerHTML = `
+            <h4>${location.name}</h4>
+            <p>Temperature: ${location.temp.toFixed(1)}°C</p>
+            <p>Wind Speed: ${location.wind.toFixed(1)} km/h</p>
+            <p>Rainfall: ${location.rainfall.toFixed(1)} mm</p>
+            <div class="risk-level risk-${getRiskLevel(location.risk_level)}">
+                Risk Level: ${getRiskLevelText(location.risk_level)}
+            </div>
+            <div class="mt-3">
+                <strong>Potential Disasters:</strong><br>
+                ${location.disaster_types.map(type => 
+                    `<span class="disaster-type">${type}</span>`
+                ).join('')}
+            </div>
+        `;
+        
+        info.classList.add('active');
+    }
+
+    function hideLocationInfo() {
+        document.getElementById('location-info').classList.remove('active');
+    }
+
+    function getRiskLevel(risk) {
+        if (risk > 0.7) return 'high';
+        if (risk > 0.4) return 'medium';
+        return 'low';
+    }
+
+    function getRiskLevelText(risk) {
+        if (risk > 0.7) return 'High';
+        if (risk > 0.4) return 'Medium';
+        return 'Low';
+    }
+
+    function onWindowResize() {
+        const container = document.getElementById('globe');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // Smooth rotation
+        currentRotation.x += (targetRotation.x - currentRotation.x) * 0.1;
+        currentRotation.y += (targetRotation.y - currentRotation.y) * 0.1;
+
+        if (globe) {
+            globe.rotation.x = currentRotation.x;
+            globe.rotation.y = currentRotation.y;
+        }
+
+        renderer.render(scene, camera);
+    }
+</script>
+{% endblock %} 

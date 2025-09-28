@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+
+{% block title %}Alerts & Resources{% endblock %}
+
+{% block head %}
+<style>
+    .alerts-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+    .alert-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 1.5rem;
+        overflow: hidden;
+    }
+    .alert-header {
+        background: var(--primary-color);
+        color: white;
+        padding: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .alert-body {
+        padding: 1.5rem;
+    }
+    .confirmation-stats {
+        display: flex;
+        gap: 1.5rem;
+        margin-top: 1rem;
+    }
+    .stat-item {
+        flex: 1;
+        text-align: center;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    .resource-card {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 1rem;
+        padding: 1.5rem;
+    }
+    .resource-status {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        margin-left: 0.5rem;
+    }
+    .status-available {
+        background: #d4edda;
+        color: #155724;
+    }
+    .status-limited {
+        background: #fff3cd;
+        color: #856404;
+    }
+    .status-unavailable {
+        background: #f8d7da;
+        color: #721c24;
+    }
+    .chart-container {
+        height: 300px;
+        margin-bottom: 2rem;
+    }
+</style>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <!-- Active Alerts -->
+        <div class="col-md-8">
+            <div class="card mb-4">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">Active Alerts</h5>
+                </div>
+                <div class="card-body">
+                    {% if alerts %}
+                        {% for alert in alerts %}
+                        <div class="alert alert-{{ 'danger' if alert.severity == 'high' else 'warning' if alert.severity == 'medium' else 'info' }} mb-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">{{ alert.message }}</h6>
+                                    <small class="text-muted">
+                                        Location: {{ alert.location }}<br>
+                                        Time: {{ alert.timestamp.split('T')[0] }} {{ alert.timestamp.split('T')[1].split('.')[0] }}
+                                    </small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-{{ 'danger' if alert.severity == 'high' else 'warning' if alert.severity == 'medium' else 'info' }}">
+                                        {{ alert.severity.upper() }}
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            {% if alert.weather_data %}
+                            <div class="mt-2">
+                                <small>
+                                    <strong>Weather Conditions:</strong><br>
+                                    Temperature: {{ alert.weather_data.temperature }}°C<br>
+                                    Wind Speed: {{ alert.weather_data.wind_speed }} km/h<br>
+                                    Rainfall: {{ alert.weather_data.rainfall }} mm
+                                </small>
+                            </div>
+                            {% endif %}
+                            
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-primary" onclick="simulateSMSAlert('{{ alert.id }}')">
+                                    Send SMS Alert
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-success">
+                            No active alerts at this time.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Available Resources -->
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Available Resources</h5>
+                </div>
+                <div class="card-body">
+                    {% if resources %}
+                        {% for resource in resources %}
+                        <div class="card mb-2">
+                            <div class="card-body p-2">
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">{{ resource.icon }}</span>
+                                    <div>
+                                        <h6 class="mb-0">{{ resource.name }}</h6>
+                                        <small class="text-muted">{{ resource.description }}</small>
+                                    </div>
+                                </div>
+                                <div class="mt-2">
+                                    <small>
+                                        <strong>Location:</strong> {{ resource.location }}<br>
+                                        <strong>Status:</strong> 
+                                        <span class="badge bg-{{ 'success' if resource.status == 'available' else 'warning' if resource.status == 'limited' else 'danger' }}">
+                                            {{ resource.status.upper() }}
+                                        </span>
+                                        {% if resource.quantity > 0 %}
+                                        <br><strong>Quantity:</strong> {{ resource.quantity }}
+                                        {% endif %}
+                                    </small>
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary mt-2" onclick="requestResource('{{ resource.id }}')">
+                                    Request Resource
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="alert alert-info">
+                            No resources available at this time.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SMS Alert Modal -->
+<div class="modal fade" id="smsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">SMS Alert Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="progress mb-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" 
+                         style="width: 0%" 
+                         id="smsProgress"></div>
+                </div>
+                <div id="smsStatus">Sending alerts to emergency contacts...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function simulateSMSAlert(alertId) {
+    const modal = new bootstrap.Modal(document.getElementById('smsModal'));
+    modal.show();
+    
+    let progress = 0;
+    const interval = setInterval(() => {
+        progress += 10;
+        document.getElementById('smsProgress').style.width = `${progress}%`;
+        
+        if (progress >= 100) {
+            clearInterval(interval);
+            document.getElementById('smsStatus').innerHTML = `
+                <div class="alert alert-success">
+                    <strong>Alert Status:</strong><br>
+                    Total Contacts: 100<br>
+                    Messages Sent: 100<br>
+                    Confirmed Receipt: ${Math.floor(Math.random() * 30) + 70}<br>
+                    Pending: ${Math.floor(Math.random() * 30)}
+                </div>
+            `;
+        }
+    }, 500);
+}
+
+function requestResource(resourceId) {
+    fetch('/api/request-resource', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            resource_id: resourceId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Resource request submitted successfully');
+        } else {
+            alert('Error requesting resource: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error requesting resource: ' + error.message);
+    });
+}
+</script>
+{% endblock %} 

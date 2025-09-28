@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Disaster Predictions - DisasterShield{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <!-- Location Selection -->
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title mb-4">Select Location</h5>
+                    <form id="locationForm">
+                        <div class="mb-3">
+                            <label for="location" class="form-label">Location</label>
+                            <select class="form-select" id="location" name="location">
+                                <option value="">Select a location...</option>
+                                {% for location, coords in locations.items() %}
+                                <option value="{{ location }}" data-lat="{{ coords.lat }}" data-lon="{{ coords.lon }}">
+                                    {{ location }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map and Results -->
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h5 class="card-title mb-4">Weather Information</h5>
+                    <div class="map-container mb-4">
+                        <div id="map"></div>
+                    </div>
+                    
+                    <!-- Weather Information -->
+                    <div id="weatherInfo" class="d-none">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="weather-card">
+                                    <i class="fas fa-temperature-high"></i>
+                                    <h6>Temperature</h6>
+                                    <p id="temperature">--°C</p>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="weather-card">
+                                    <i class="fas fa-wind"></i>
+                                    <h6>Wind Speed</h6>
+                                    <p id="windSpeed">-- km/h</p>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="weather-card">
+                                    <i class="fas fa-cloud-rain"></i>
+                                    <h6>Rainfall</h6>
+                                    <p id="rainfall">-- mm</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Risk Assessment -->
+                    <div id="riskAssessment" class="d-none">
+                        <h5 class="card-title mb-4">Risk Assessment</h5>
+                        <div class="risk-level mb-4">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h6 class="mb-0">Risk Level</h6>
+                                <span id="riskLevel" class="badge">--</span>
+                            </div>
+                        </div>
+                        <div class="risk-factors">
+                            <h6 class="mb-3">Risk Factors</h6>
+                            <div id="riskFactors"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize map
+    initMap();
+
+    // Handle location selection
+    const locationSelect = document.getElementById('location');
+    locationSelect.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        if (selectedOption.value) {
+            const lat = parseFloat(selectedOption.dataset.lat);
+            const lon = parseFloat(selectedOption.dataset.lon);
+            const location = selectedOption.value;
+            
+            // Update map
+            updateMap(lat, lon, location);
+            
+            // Show weather info section
+            document.getElementById('weatherInfo').classList.remove('d-none');
+            document.getElementById('riskAssessment').classList.remove('d-none');
+            
+            // Fetch prediction data
+            fetch('/api/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ location: location })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update weather information
+                    document.getElementById('temperature').textContent = `${data.weather_data.temperature}°C`;
+                    document.getElementById('windSpeed').textContent = `${data.weather_data.wind_speed} km/h`;
+                    document.getElementById('rainfall').textContent = `${data.weather_data.rainfall} mm`;
+                    
+                    // Update risk level
+                    const riskLevel = document.getElementById('riskLevel');
+                    riskLevel.textContent = data.probability > 0.7 ? 'High' : data.probability > 0.4 ? 'Medium' : 'Low';
+                    riskLevel.className = `badge ${data.probability > 0.7 ? 'bg-danger' : data.probability > 0.4 ? 'bg-warning' : 'bg-success'}`;
+                    
+                    // Update risk factors
+                    const riskFactors = document.getElementById('riskFactors');
+                    riskFactors.innerHTML = Object.entries(data.risk_factors)
+                        .map(([factor, level]) => `
+                            <div class="risk-factor ${level.toLowerCase()}">
+                                <span class="factor-name">${factor}</span>
+                                <span class="factor-level">${level}</span>
+                            </div>
+                        `).join('');
+                } else {
+                    showError(data.error || 'Failed to fetch prediction data');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showError('Failed to fetch prediction data');
+            });
+        } else {
+            // Hide sections if no location is selected
+            document.getElementById('weatherInfo').classList.add('d-none');
+            document.getElementById('riskAssessment').classList.add('d-none');
+        }
+    });
+});
+</script>
+{% endblock %} 
